@@ -51,7 +51,7 @@ agent = Agent(
     seed="testing",
     port=None,  # Disable agent's HTTP server
     endpoint=["http://localhost:8000/submit"],  # Use FastAPI endpoint
-    use_mailbox=False
+    
 )
 
 AI_AGENT_ADDRESS = "agent1qdcnxjrr5u5jkqqtcaeqdxxpxne47nvcrm4k3krsprwwgnx50hg96txxjuf"
