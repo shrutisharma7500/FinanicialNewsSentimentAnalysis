@@ -45,21 +45,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Agent setup
-agent = Agent(name="newsagent" ,seed="testing", port=8000, endpoint=["http://localhost:8000/submit"])
+# Agent setup - Disable HTTP server and use FastAPI's endpoint
+agent = Agent(
+    name="newsagent",
+    seed="testing",
+    port=None,  # Disable agent's HTTP server
+    endpoint=["http://localhost:8000/submit"],  # Use FastAPI endpoint
+    use_mailbox=False
+)
 
 AI_AGENT_ADDRESS = "agent1qdcnxjrr5u5jkqqtcaeqdxxpxne47nvcrm4k3krsprwwgnx50hg96txxjuf"
-
 response_store = {}
+
+# Agent handlers
+@agent.on_event("startup")
+async def agent_startup(ctx: Context):
+    ctx.logger.info("Agent started")
 
 @agent.on_message(FinancialNewsSentimentResponse)
 async def handle_response(ctx: Context, sender: str, msg: FinancialNewsSentimentResponse):
+    ctx.logger.info(f"Received response from {sender}")
     response_store[ctx.message.reply_to] = msg
 
+# FastAPI endpoints
 @app.post("/submit")
 async def agent_submit(request: dict):
     """Endpoint for agent communication"""
-    # Process agent messages here if needed
     return {"status": "received"}
 
 @app.post("/get-sentiment", response_model=APIFinancialNewsResponse)
@@ -93,14 +104,19 @@ async def get_sentiment(request: APIFinancialNewsRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+# Proper agent initialization
 @app.on_event("startup")
 async def startup_event():
-    # Start agent without HTTP server
     async def run_agent():
         try:
-            await agent.start()
+            # Correct way to run the agent without starting HTTP server
+            await agent.run_async()
         except Exception as e:
-            print(f"Agent startup error: {e}")
+            print(f"Agent initialization error: {e}")
 
     asyncio.create_task(run_agent())
 
