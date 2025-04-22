@@ -112,10 +112,19 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
-# Run the agent in the background
+# Modified startup event to properly run the agent
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(agent.run())
+    async def run_agent():
+        try:
+            await agent.run_async()  # Use run_async instead of run
+        except Exception as e:
+            app.state.agent_running = False
+            print(f"Agent failed to start: {e}")
+    
+    # Store agent state in the app instance
+    app.state.agent_running = True
+    asyncio.create_task(run_agent())
 
 if __name__ == "__main__":
     import uvicorn
