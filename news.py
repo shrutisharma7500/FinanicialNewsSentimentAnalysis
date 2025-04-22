@@ -46,86 +46,64 @@ app.add_middleware(
 )
 
 # Agent setup
-agent = Agent()
+agent = Agent(name="newsagent" ,seed="testing", port=8000, endpoint=["http://localhost:8000/submit"])
+
 AI_AGENT_ADDRESS = "agent1qdcnxjrr5u5jkqqtcaeqdxxpxne47nvcrm4k3krsprwwgnx50hg96txxjuf"
 
-# Store for responses
 response_store = {}
 
 @agent.on_message(FinancialNewsSentimentResponse)
 async def handle_response(ctx: Context, sender: str, msg: FinancialNewsSentimentResponse):
-    ctx.logger.info(f"Received response from {sender}:")
-    ctx.logger.info(msg.summary)
     response_store[ctx.message.reply_to] = msg
 
-# FastAPI Endpoints
+@app.post("/submit")
+async def agent_submit(request: dict):
+    """Endpoint for agent communication"""
+    # Process agent messages here if needed
+    return {"status": "received"}
+
 @app.post("/get-sentiment", response_model=APIFinancialNewsResponse)
 async def get_sentiment(request: APIFinancialNewsRequest):
-    """
-    Get financial news sentiment for a given ticker
-    
-    Parameters:
-    - ticker: Stock ticker symbol (e.g., AAPL, MSFT)
-    
-    Returns:
-    - List of news articles with sentiment analysis
-    """
     try:
-        # Create a unique ID for this request
         request_id = str(hash(f"{request.ticker}{asyncio.get_event_loop().time()}"))
         
-        # Send the request to the agent
         await agent._ctx.send(
             AI_AGENT_ADDRESS,
             FinancialNewsSentimentRequest(ticker=request.ticker),
             reply_to=request_id
         )
         
-        # Wait for response (with timeout)
         max_retries = 10
-        retry_count = 0
-        while request_id not in response_store and retry_count < max_retries:
+        for _ in range(max_retries):
+            if request_id in response_store:
+                response = response_store.pop(request_id)
+                return {
+                    "summary": [
+                        {
+                            "title": item.title,
+                            "url": item.url,
+                            "summary": item.summary,
+                            "overall_sentiment_label": item.overall_sentiment_label
+                        } for item in response.summary
+                    ]
+                }
             await asyncio.sleep(1)
-            retry_count += 1
         
-        if request_id not in response_store:
-            raise HTTPException(status_code=504, detail="Agent response timeout")
-        
-        # Get and format the response
-        response = response_store.pop(request_id)
-        return {
-            "summary": [
-                {
-                    "title": item.title,
-                    "url": item.url,
-                    "summary": item.summary,
-                    "overall_sentiment_label": item.overall_sentiment_label
-                } for item in response.summary
-            ]
-        }
-        
+        raise HTTPException(status_code=504, detail="Agent response timeout")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
-
-# Modified startup event to properly run the agent
 @app.on_event("startup")
 async def startup_event():
+    # Start agent without HTTP server
     async def run_agent():
         try:
-            await agent.run_async()  # Use run_async instead of run
+            await agent.start()
         except Exception as e:
-            app.state.agent_running = False
-            print(f"Agent failed to start: {e}")
-    
-    # Store agent state in the app instance
-    app.state.agent_running = True
+            print(f"Agent startup error: {e}")
+
     asyncio.create_task(run_agent())
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, lifespan="on")
