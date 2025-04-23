@@ -5,7 +5,7 @@ from uagents import Agent, Context, Model
 import asyncio
 from fastapi.middleware.cors import CORSMiddleware
 
-# Original Agent Code
+# Model definitions
 class FinancialNewsSentimentRequest(Model):
     ticker: str
 
@@ -18,7 +18,7 @@ class NewsSentiment(Model):
 class FinancialNewsSentimentResponse(Model):
     summary: List[NewsSentiment]
 
-# FastAPI Models
+# FastAPI models
 class APIFinancialNewsRequest(BaseModel):
     ticker: str
 
@@ -32,44 +32,40 @@ class APIFinancialNewsResponse(BaseModel):
     summary: List[APINewsSentiment]
     status: str = "success"
 
-# Initialize FastAPI app
-app = FastAPI(title="Financial News Sentiment API",
-              description="API wrapper for Financial News Sentiment Agent")
+# Initialize FastAPI
+app = FastAPI(title="Financial News Sentiment API")
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Agent setup - Disable HTTP server and use FastAPI's endpoint
-agent = Agent(
+# Agent setup - Disable ALL server functionality
+class CustomAgent(Agent):
+    async def start_server(self):
+        """Override to prevent server startup"""
+        print("Agent server startup suppressed")
+        return None
+
+agent = CustomAgent(
     name="newsagent",
     seed="testing",
-    port=None,  # Disable agent's HTTP server
-    endpoint=["http://localhost:8000/submit"],  # Use FastAPI endpoint
-    
+    port=None,
+    endpoint=["http://localhost:8000/agent"]
 )
 
 AI_AGENT_ADDRESS = "agent1qdcnxjrr5u5jkqqtcaeqdxxpxne47nvcrm4k3krsprwwgnx50hg96txxjuf"
 response_store = {}
 
-# Agent handlers
-@agent.on_event("startup")
-async def agent_startup(ctx: Context):
-    ctx.logger.info("Agent started")
-
 @agent.on_message(FinancialNewsSentimentResponse)
 async def handle_response(ctx: Context, sender: str, msg: FinancialNewsSentimentResponse):
-    ctx.logger.info(f"Received response from {sender}")
     response_store[ctx.message.reply_to] = msg
 
-# FastAPI endpoints
-@app.post("/submit")
-async def agent_submit(request: dict):
+@app.post("/agent")
+async def agent_endpoint(request: dict):
     """Endpoint for agent communication"""
     return {"status": "received"}
 
@@ -108,13 +104,12 @@ async def get_sentiment(request: APIFinancialNewsRequest):
 async def health_check():
     return {"status": "healthy"}
 
-# Proper agent initialization
 @app.on_event("startup")
 async def startup_event():
     async def run_agent():
         try:
-            # Correct way to run the agent without starting HTTP server
-            await agent.run_async()
+            # Initialize agent without starting server
+            await agent._startup()
         except Exception as e:
             print(f"Agent initialization error: {e}")
 
