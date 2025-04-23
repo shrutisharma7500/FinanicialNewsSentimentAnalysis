@@ -43,18 +43,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Agent setup - Disable ALL server functionality
-class CustomAgent(Agent):
-    async def start_server(self):
-        """Override to prevent server startup"""
-        print("Agent server startup suppressed")
-        return None
-
-agent = CustomAgent(
+# Create a minimal agent that won't start a server
+agent = Agent(
     name="newsagent",
     seed="testing",
-    port=None,
-    endpoint=["http://localhost:8000/agent"]
+    port=None,  # Explicitly disable HTTP server
+    endpoint=["http://localhost:8000/agent"]  # Use FastAPI endpoint
 )
 
 AI_AGENT_ADDRESS = "agent1qdcnxjrr5u5jkqqtcaeqdxxpxne47nvcrm4k3krsprwwgnx50hg96txxjuf"
@@ -106,14 +100,16 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup_event():
-    async def run_agent():
+    async def initialize_agent():
         try:
-            # Initialize agent without starting server
-            await agent._startup()
+            # Initialize agent components without starting server
+            await agent._database.connect()
+            await agent._message_queue.start()
+            print("Agent initialized successfully")
         except Exception as e:
             print(f"Agent initialization error: {e}")
 
-    asyncio.create_task(run_agent())
+    asyncio.create_task(initialize_agent())
 
 if __name__ == "__main__":
     import uvicorn
